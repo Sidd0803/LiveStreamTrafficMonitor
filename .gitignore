@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+runs/
+eval/frames/*.jpg
+!eval/frames/.gitkeep
+*.egg-info/
+.DS_Store

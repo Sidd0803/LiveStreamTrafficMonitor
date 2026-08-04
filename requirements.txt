@@ -1,0 +1,25 @@
+# Core
+requests>=2.32.0
+python-dotenv>=1.0.1
+pydantic>=2.9.0
+
+# Imaging
+Pillow>=10.4.0
+numpy>=1.26.0
+
+# Detection
+inference-sdk>=0.20.0
+
+# Gemini
+google-genai>=1.0.0
+
+# Dashboard
+streamlit>=1.39.0
+pandas>=2.2.0
+
+# GCP (Phase 3 — safe to install now, unused until then)
+google-cloud-storage>=2.18.0
+google-cloud-firestore>=2.19.0
+
+# Tests
+pytest>=8.3.0

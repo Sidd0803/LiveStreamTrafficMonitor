@@ -1,0 +1,80 @@
+{
+  "_comment": [
+    "Hand-curated demo cameras, chosen by VISUAL INSPECTION of live frames on",
+    "2026-08-04 -- not by name matching. Name matching is unreliable here:",
+    "it selected bridge decks (WBB-20 @ Above Bedford Ave), elevated highway",
+    "ramps (Canal Street @ Chrystie Street), a skyline-facing camera (Queens",
+    "Plaza N @ Northern Blvd), and one camera with a dirty/hazed lens (Queens",
+    "Blvd @ 39 St - East). None of those can show double parking.",
+    "",
+    "Selection criteria: local commercial street, camera looking DOWN the",
+    "roadway (not across it), visible curb lane with parked vehicles, and",
+    "enough resolution on the near half of the frame to resolve a vehicle.",
+    "",
+    "All NYC DOT snapshots are 352x240. Re-verify this list before a demo --",
+    "cameras get repositioned and go offline."
+  ],
+  "cameras": [
+    {
+      "id": "ec9eda79-e250-4e6f-a8f6-e51021fb054f",
+      "name": "Amsterdam Ave @ 60 St",
+      "area": "Manhattan",
+      "latitude": 40.771057,
+      "longitude": -73.987139,
+      "quality": "best",
+      "notes": "Looks down a commercial one-way. Delivery vans routinely stopped in the travel lane; double parking was visible in the very first frame sampled."
+    },
+    {
+      "id": "39b42007-16d8-4302-8b8c-602bbb9e9683",
+      "name": "Northern Blvd @ 114 St",
+      "area": "Queens",
+      "latitude": 40.758271,
+      "longitude": -73.855567,
+      "quality": "best",
+      "notes": "Dense curbside parking on both sides with clearly separated travel lanes. Good separation between parked row and moving traffic."
+    },
+    {
+      "id": "2f28f8df-5eb5-4327-ab1f-7feaf2630b34",
+      "name": "Grand Concourse @ Bedford Park Blvd",
+      "area": "Bronx",
+      "latitude": 40.872207,
+      "longitude": -73.887658,
+      "quality": "good",
+      "notes": "Busy local corridor with street vendors. High vehicle density; expect more false positives from congestion."
+    },
+    {
+      "id": "0039e6bf-5244-4b4e-b7dc-d02056bbfdc9",
+      "name": "Atlantic Ave @ 111 St",
+      "area": "Brooklyn",
+      "latitude": 40.692157,
+      "longitude": -73.834927,
+      "quality": "good",
+      "notes": "Local commercial street, parked cars both sides, clean lane structure."
+    },
+    {
+      "id": "04e09ed5-2d97-4e29-8438-b87748850dbb",
+      "name": "Columbus Ave @ 65 St",
+      "area": "Manhattan",
+      "latitude": 40.77297,
+      "longitude": -73.981993,
+      "quality": "good",
+      "notes": "Upper West Side local street with steady delivery activity."
+    },
+    {
+      "id": "cb68b8b1-9093-4f2e-acf2-8133b047e8df",
+      "name": "Flatbush Ave @ Eastern Pkwy",
+      "area": "Brooklyn",
+      "latitude": 40.672796,
+      "longitude": -73.969278,
+      "quality": "fair",
+      "notes": "Wide intersection view. Vehicles are small in frame; keep as a backup camera."
+    }
+  ],
+  "rejected": [
+    {"name": "WBB-20 @ Above Bedford Ave ( Berry St )", "reason": "Williamsburg Bridge deck -- limited-access, no double parking"},
+    {"name": "Canal Street @ Chrystie Street", "reason": "Elevated bridge approach ramp, not the surface street"},
+    {"name": "Queens Plaza N @ Northern Blvd", "reason": "Camera framed on skyline/bridge, roadway is a small fraction of frame"},
+    {"name": "Queens Blvd @ 39 St - East", "reason": "Hazed/dirty lens, washed-out image"},
+    {"name": "Broadway @ 45 St", "reason": "Times Square -- heavy pedestrian occlusion, atypical traffic pattern"}
+  ]
+}

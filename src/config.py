@@ -91,16 +91,19 @@ CROP_MIN_DIM_PX = 320
 GEMINI_MIN_CONFIDENCE = 0.55
 
 # --- Demo defaults ---------------------------------------------------------
-# Substrings matched against camera `name` to find local-street cameras with
-# real double-parking pressure. Avoid highways — no double parking there.
+# Hand-curated camera list, selected by visually inspecting live frames.
+# This file is the source of truth for which cameras the demo uses.
+DEMO_CAMERAS_FILE = DATA_DIR / "demo_cameras.json"
+
+# Fallback only, used if the curated file is missing. Name matching is a poor
+# selector — it happily returns bridge decks and highway ramps, where double
+# parking cannot occur. Prefer the curated file.
 DEFAULT_CAMERA_NAME_HINTS = [
-    "Queens Blvd",
-    "Atlantic Av",
-    "Flatbush Av",
-    "Broadway",
-    "Canal St",
-    "Delancey St",
-    "3 Av",
-    "5 Av",
+    "Amsterdam Ave",
+    "Northern Blvd",
+    "Grand Concourse",
+    "Atlantic Ave",
+    "Columbus Ave",
+    "Flatbush Ave",
 ]
 MAX_DEMO_CAMERAS = 6

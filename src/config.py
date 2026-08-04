@@ -81,6 +81,14 @@ CURB_BAND_FRACTION = 0.18
 # Ignore boxes smaller than this fraction of frame area — distant noise.
 MIN_BOX_AREA_FRACTION = 0.004
 
+# Congestion guard. At a red light every vehicle is stationary in a travel
+# lane, which a naive rule reads as a frame full of double-parking. If at
+# least this fraction of tracks are stationary, treat the frame as congested
+# and emit nothing — double parking means stopped *while traffic moves*.
+CONGESTION_STATIONARY_FRACTION = 0.70
+# Below this many tracks the fraction is too noisy to be meaningful.
+CONGESTION_MIN_TRACKS = 4
+
 # --- Gemini adjudication ---------------------------------------------------
 # Pixels of context to include around a candidate box when cropping. A bare
 # box gives the model no road context to judge lane position from.

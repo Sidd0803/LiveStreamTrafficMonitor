@@ -16,8 +16,8 @@ Last updated: **2026-08-04**
 | Box geometry + IoU | ✅ Done | `baa6205` |
 | IoU tracker (stationarity) | ✅ Done, 19 tests pass | `baa6205` |
 | Lane/curb heuristic | ✅ Done, 19 tests pass | `baa6205` |
-| Docs + GitHub remote | ✅ Done | this commit |
-| Roboflow client | ⛔ **Blocked — needs `ROBOFLOW_API_KEY`** | — |
+| Docs + GitHub remote | ✅ Done | `2030aac` |
+| Roboflow client | 🟡 **Written, 17 tests pass — unverified against live API** | this commit |
 | Gemini adjudicator | ⛔ **Blocked — needs `GEMINI_API_KEY`** | — |
 | Pipeline orchestration | ⬜ Not started | — |
 | Streamlit dashboard | ⬜ Not started | — |
@@ -32,20 +32,15 @@ sequencing decision. NYC DOT needs no key.
 ## Pick up here
 
 1. Get a [Roboflow key](https://app.roboflow.com) and a [Gemini key](https://aistudio.google.com/apikey), put them in `.env`.
-2. Build `src/detect/roboflow_client.py` — wrap `InferenceHTTPClient` against a
-   Universe vehicle model, return `Box` objects via `Box.from_center(...)`
-   (Roboflow uses center-based boxes; `boxes.py` already handles the conversion).
-   Filter by `config.MIN_BOX_CONFIDENCE` and `config.VEHICLE_CLASSES`.
+2. Fill in `ROBOFLOW_WORKSPACE` and `ROBOFLOW_WORKFLOW_ID` (from the workflow's
+   URL in the Roboflow app), then **run the detector against a live frame** —
+   `roboflow_client.py` is written and unit-tested but has never made a real
+   API call. Confirm it resolves vehicles at 352x240.
 3. Build `src/detect/gemini_judge.py` — crop with `Box.padded(config.CROP_PADDING_PX, ...)`,
    upscale to `config.CROP_MIN_DIM_PX`, send with a Pydantic `responseSchema`
    (`is_double_parked`, `confidence`, `reason`, `vehicle_type`). Use structured
    output, not free-text parsing.
 4. Wire `src/pipeline.py` + `app.py`, then the eval set.
-
-**Verify the model choice before trusting it.** `ROBOFLOW_MODEL_ID` in
-`.env.example` is a placeholder that has not been tested against real frames.
-Pick a Universe model and check it actually resolves vehicles at 352x240 —
-see the open risk below.
 
 ---
 
@@ -115,7 +110,25 @@ This drives several design choices:
   argument for the Phase 4 stretch goal of fine-tuning on real traffic-cam
   frames rather than using a Universe model trained on high-res imagery.
 
-### 5. Two false-positive traps the heuristic handles explicitly
+### 5. Roboflow Workflows cannot do our temporal logic
+
+Roboflow proposed a workflow that would also handle zone flagging, incident
+detection and Vision Events logging. Declined, for a concrete reason: Roboflow's
+stateful blocks (**ByteTrack**, **Time in Zone**) require continuous video. Per
+Roboflow's own docs, on a still image "there is no meaningful history to track,
+compare, aggregate, or visualize."
+
+Our input is independent snapshots ~12s apart, so those blocks don't apply, and
+single-frame zone occupancy would flag every vehicle in the lane — including
+moving traffic and red-light queues. That is exactly the single-frame heuristic
+rejected during scoping.
+
+Settled boundary: **Roboflow detects, Python decides, Gemini adjudicates.** The
+hosted workflow is detection-only — one image in, vehicle boxes out. Keeping
+incident logic in Python also preserves the congestion guard and keeps Firestore
+meaningful as the incident store.
+
+### 6. Two false-positive traps the heuristic handles explicitly
 
 - **Red lights / gridlock.** At a red light *every* vehicle is stationary in a
   travel lane — a naive rule reads that as a frame full of double-parking. If
@@ -169,7 +182,8 @@ incident lasting 10 polls shouldn't count as 10 successes.
 
 | Risk | Mitigation |
 |---|---|
-| Universe model may not resolve vehicles at 352x240 | Test before committing to it; fine-tuning is the fallback |
+| **Model may not resolve vehicles at 352x240** — still the top unknown | Test `vehicle-detection-bz0yu/4` against live frames before building on it; fine-tuning is the fallback |
+| Workflow output key may not be `vehicle_boxes` | Client searches the response for prediction geometry rather than hardcoding a path, and falls back to direct model inference |
 | Nothing double-parks during a live demo | Build a **replay mode** over cached frames (near-free alongside the eval set) |
 | Camera offline mid-demo | `demo_cameras()` cross-checks the live catalog and falls back |
 | Heuristic false-positive rate unknown | This is what the eval set is for; Gemini is the second gate |
@@ -182,7 +196,8 @@ incident lasting 10 polls shouldn't count as 10 successes.
 - ✅ Live snapshot fetch — valid JPEG, 352x240, ~9-22KB
 - ✅ Refresh-rate probe — 18/18 distinct frames at 5s cadence
 - ✅ Curated camera loading with live cross-check — 6/6 resolved
-- ✅ `pytest tests/ -q` — **19 passed**
+- ✅ `pytest tests/ -q` — **36 passed**
+- ⛔ Roboflow live inference — **not yet run**, no key
 
 Tests deliberately cover both directions: the negative heuristic cases would
 all pass trivially if the heuristic simply rejected everything, so there is an
@@ -197,3 +212,5 @@ explicit positive test for the genuine double-parking pattern.
 | `7021e02` | Scaffold: layout, dependencies, central config |
 | `e6889a5` | NYC DOT camera source + hand-curated camera list |
 | `baa6205` | Box geometry, IoU tracker, lane heuristic, 19 tests |
+| `2030aac` | README, build plan, progress log |
+| _this_ | Roboflow client (workflow + direct model paths), 17 more tests |

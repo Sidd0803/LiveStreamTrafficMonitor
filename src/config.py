@@ -21,8 +21,21 @@ EVAL_DIR = REPO_ROOT / "eval"
 
 # --- Credentials -----------------------------------------------------------
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY", "")
-ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "vehicle-detection-3mmwj/1")
-ROBOFLOW_API_URL = "https://serverless.roboflow.com"
+ROBOFLOW_API_URL = os.getenv("ROBOFLOW_API_URL", "https://serverless.roboflow.com")
+
+# Direct model inference. Used when no workflow is configured, and as the
+# fallback if the workflow call fails.
+ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "vehicle-detection-bz0yu/4")
+
+# Hosted Workflow: "one image in, vehicle boxes out". Deliberately detection
+# only — tracking, zone logic and incident detection stay in Python, because
+# Roboflow's stateful blocks (ByteTrack, Time in Zone) need continuous video
+# and our frames are ~12s apart.
+ROBOFLOW_WORKSPACE = os.getenv("ROBOFLOW_WORKSPACE", "")
+ROBOFLOW_WORKFLOW_ID = os.getenv("ROBOFLOW_WORKFLOW_ID", "")
+# Input/output key names as defined in the workflow itself.
+ROBOFLOW_WORKFLOW_IMAGE_KEY = os.getenv("ROBOFLOW_WORKFLOW_IMAGE_KEY", "image")
+ROBOFLOW_WORKFLOW_OUTPUT_KEY = os.getenv("ROBOFLOW_WORKFLOW_OUTPUT_KEY", "vehicle_boxes")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -116,6 +117,27 @@ def _scan(node: Any, key: str, depth: int = 0) -> str | None:
     return None
 
 
+def is_vehicle_label(label: str) -> bool:
+    """Does this class label denote a vehicle that could be double parked?
+
+    Word-level rather than whole-string, because label vocabularies differ per
+    model in ways exact matching handles badly: "pickup-truck", "semi-trailer"
+    and "vehicles" all denote vehicles but match none of "pickup", "truck",
+    "vehicle" exactly. Splitting on separators and de-pluralizing catches them.
+
+    Kept deliberately permissive. A wrongly-kept box costs one Gemini call at
+    the adjudication gate; a wrongly-dropped box is invisible and removes a
+    real double-parker from the pipeline before anything can flag it.
+    """
+    words = {w for w in re.split(r"[-_/\s]+", label.strip().lower()) if w}
+    # "vehicles" -> "vehicle", "buses" -> "buse" (harmless; "bus" also present)
+    words |= {w[:-1] for w in words if len(w) > 3 and w.endswith("s")}
+
+    if words & config.NON_VEHICLE_WORDS:
+        return False
+    return bool(words & config.VEHICLE_WORDS)
+
+
 def _to_boxes(predictions: list[dict]) -> list[Box]:
     """Convert Roboflow center-based predictions to our corner-form boxes."""
     boxes: list[Box] = []
@@ -125,9 +147,10 @@ def _to_boxes(predictions: list[dict]) -> list[Box]:
 
         if confidence < config.MIN_BOX_CONFIDENCE:
             continue
-        # Universe models carry varied label vocabularies; some include people,
-        # traffic lights and signs. Keep only things that can be double parked.
-        if config.VEHICLE_CLASSES and label not in config.VEHICLE_CLASSES:
+        # Models carry varied label vocabularies; COCO-trained ones include
+        # people, traffic lights and signs. Keep only things that could be
+        # double parked.
+        if not is_vehicle_label(label):
             log.debug("dropping non-vehicle class %r", label)
             continue
 

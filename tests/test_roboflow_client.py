@@ -10,7 +10,12 @@ from __future__ import annotations
 import pytest
 
 from src import config
-from src.detect.roboflow_client import _find_predictions, _scan, _to_boxes
+from src.detect.roboflow_client import (
+    _find_predictions,
+    _scan,
+    _to_boxes,
+    is_vehicle_label,
+)
 
 
 def pred(x, y, w, h, cls="car", conf=0.9) -> dict:
@@ -126,3 +131,41 @@ def test_missing_class_defaults_to_vehicle():
 
 def test_empty_input_yields_empty_output():
     assert _to_boxes([]) == []
+
+
+# --- vehicle-class matching ------------------------------------------------
+#
+# Regression coverage for a silent failure: the original exact-match set held
+# "truck", "pickup" and "vehicle", while the deployed model emits
+# "pickup-truck", "semi-trailer" and "vehicles". Every one was dropped, and a
+# dropped box leaves no trace — it just never reaches the tracker. On NYC local
+# streets "semi-trailer" is the label for box and delivery trucks, i.e. the
+# most common double-parker of all.
+
+@pytest.mark.parametrize("label", [
+    "car", "truck", "bus", "motorcycle",          # COCO vocabulary
+    "pickup-truck", "semi-trailer", "vehicles",   # vehicle-detection-bz0yu
+    "Pickup_Truck", "  CAR  ", "delivery van", "mini-bus",
+])
+def test_vehicle_labels_are_kept(label):
+    assert is_vehicle_label(label)
+
+
+@pytest.mark.parametrize("label", [
+    "person", "traffic light", "traffic sign", "fire hydrant",
+    "bicycle", "dog", "", "   ",
+])
+def test_non_vehicle_labels_are_dropped(label):
+    assert not is_vehicle_label(label)
+
+
+@pytest.mark.parametrize("label", ["bus stop", "truck stop sign", "bus lane"])
+def test_veto_words_beat_a_vehicle_word_in_the_same_label(label):
+    """"bus stop" contains "bus" but is street furniture, not a vehicle."""
+    assert not is_vehicle_label(label)
+
+
+def test_semi_trailer_survives_the_full_normalization_path():
+    """End-to-end through _to_boxes, not just the predicate."""
+    boxes = _to_boxes([pred(50, 50, 40, 30, cls="semi-trailer")])
+    assert [b.label for b in boxes] == ["semi-trailer"]

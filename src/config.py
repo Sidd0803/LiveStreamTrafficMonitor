@@ -25,7 +25,17 @@ ROBOFLOW_API_URL = os.getenv("ROBOFLOW_API_URL", "https://serverless.roboflow.co
 
 # Direct model inference. Used when no workflow is configured, and as the
 # fallback if the workflow call fails.
-ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "vehicle-detection-bz0yu/4")
+#
+# COCO-pretrained YOLOv8-medium, benchmarked 2026-08-05 against the same live
+# frames as vehicle-detection-bz0yu/4 (the model Roboflow originally suggested):
+# nearly twice the detections above 0.40 confidence, a higher median confidence
+# (0.25 vs 0.19), and ~4x faster. It also has a real "truck" class — the other
+# model had only "semi-trailer", and box trucks are the archetypal double-parker.
+#
+# The prior model was a 203-image public Universe project of unverifiable
+# provenance whose training run predated the project itself, with preprocessing
+# that stretches input to 640x640 — badly distorting our 352x240 frames.
+ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "yolov8m-640")
 
 # Hosted Workflow: "one image in, vehicle boxes out". Deliberately detection
 # only — tracking, zone logic and incident detection stay in Python, because
@@ -68,12 +78,26 @@ NY511_MIN_INTERVAL_S = 7.0
 # Roboflow: drop low-confidence boxes before they reach the tracker.
 MIN_BOX_CONFIDENCE = 0.40
 
-# Classes we treat as "a vehicle that could be double parked". Universe models
-# vary in their label vocabulary, so match case-insensitively against this set.
-VEHICLE_CLASSES = {
-    "car", "truck", "bus", "van", "vehicle", "motorcycle",
-    "suv", "pickup", "taxi", "auto",
+# Word-level vocabulary for "a vehicle that could be double parked".
+#
+# Matching is per-word, not whole-string, because model label vocabularies vary
+# more than they look. vehicle-detection-bz0yu emits "pickup-truck",
+# "semi-trailer" and "vehicles"; an exact-match set containing "truck",
+# "pickup" and "vehicle" silently dropped all three. On NYC local streets
+# "semi-trailer" is this model's label for box and delivery trucks — the single
+# most common double-parker — so the filter was discarding the primary target.
+#
+# See is_vehicle_label() in detect/roboflow_client.py for the matching rule:
+# labels are lowercased, split on -/_/space, and de-pluralized before lookup.
+VEHICLE_WORDS = {
+    "car", "truck", "bus", "van", "vehicle", "motorcycle", "motorbike",
+    "suv", "pickup", "taxi", "cab", "auto", "automobile", "jeep",
+    "trailer", "semi", "lorry", "minivan", "coach", "ambulance",
 }
+
+# Words that veto a label even if a vehicle word is also present. Guards
+# against things like "truck-stop-sign" or "bus stop" being read as vehicles.
+NON_VEHICLE_WORDS = {"stop", "sign", "lane", "light", "signal", "person", "pedestrian"}
 
 # Tracker: two boxes in consecutive polls are "the same vehicle" above this IoU.
 # High, because a genuinely stationary vehicle barely moves between polls.

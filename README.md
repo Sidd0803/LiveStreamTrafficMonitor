@@ -7,9 +7,11 @@ A learning project built as a precursor to a hackathon, to get hands-on with
 **NYC DOT / 511NY open camera data, Roboflow, Gemini, and GCP**. A working
 end-to-end demo is the definition of done; ambition is secondary to completion.
 
-> **Status:** Phase 1 in progress. Camera ingestion, tracking, and the spatial
-> heuristic are built and verified. Detection and adjudication are next and
-> need API keys. See [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status:** Phase 1 in progress. Camera ingestion and detection are built and
+> **verified against live NYC cameras**. The tracker and heuristic are written
+> and unit-tested but have not yet run on a real frame sequence — so **no
+> double-parking detection happens end to end yet**. Adjudication, pipeline and
+> dashboard are not built. See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ---
 
@@ -62,8 +64,11 @@ cd LiveStreamTrafficMonitor
 ```
 
 ```bash
-python -m venv .venv && .venv/Scripts/activate && pip install -r requirements.txt
+python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
+
+**Python 3.12 is required** — `inference-sdk` declares `<3.13` and has no wheel
+for 3.14, so the install fails on newer interpreters.
 
 Copy the env template and fill in your keys:
 
@@ -85,13 +90,33 @@ cp .env.example .env
 Imports are rooted at the repo, so `PYTHONPATH` must include it:
 
 ```bash
-export PYTHONPATH=$PWD && python -m pytest tests/ -q
+export PYTHONPATH=$PWD && .venv/bin/python -m pytest tests/ -q
 ```
 
 On Windows PowerShell:
 
 ```bash
 $env:PYTHONPATH = $PWD; python -m pytest tests/ -q
+```
+
+Check detection against live frames — writes annotated PNGs to `runs/smoke/`:
+
+```bash
+PYTHONPATH=$PWD .venv/bin/python scripts/smoke_roboflow.py --all-cameras
+```
+
+Run the tracker and heuristic over a real poll sequence — caches frames and
+detections to `runs/replay/`, then renders each poll with track IDs, dwell
+counters and the curb band drawn on:
+
+```bash
+PYTHONPATH=$PWD .venv/bin/python scripts/replay.py --polls 12
+```
+
+Re-tune thresholds offline against that cache, no network, no re-polling:
+
+```bash
+PYTHONPATH=$PWD .venv/bin/python scripts/replay.py --analyze-only --confidence 0.15
 ```
 
 The Streamlit dashboard (once Phase 1 completes):
@@ -118,6 +143,8 @@ src/
   pipeline.py            orchestrates one poll cycle
 data/demo_cameras.json   hand-curated cameras, with rejections and reasons
 eval/                    labeled set + precision/recall harness
+scripts/smoke_roboflow.py  live detection check, annotated output
+scripts/replay.py        poll-sequence capture + tracker/heuristic replay
 tests/                   tracker and heuristic tests (no keys, no network)
 docs/                    build plan and progress log
 ```

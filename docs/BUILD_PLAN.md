@@ -243,3 +243,50 @@ score precision/recall per *incident* or per *frame* — an incident spanning 10
 polls should not count as 10 successes.
 
 **Decide this before building `eval/run_eval.py`.** Flagged for review.
+
+`scripts/replay.py` (added 2026-08-05) now caches poll sequences per camera as
+frames plus raw detections, which is the collection half of whichever design
+wins. Labeling and scoring remain undecided.
+
+### A5 — Detection model changed to COCO `yolov8m-640` (2026-08-05)
+
+The plan said "pretrained Universe vehicle model," and Roboflow suggested
+`vehicle-detection-bz0yu/4`. On inspection that model is a 203-image public
+project whose training run predates its own creation date, with 640x640 stretch
+preprocessing that badly distorts 352x240 input.
+
+Benchmarked against six alternatives on identical live frames. `yolov8m-640`
+gives nearly twice the detections above 0.40 confidence, a higher median
+confidence, ~4x lower latency, and a real `truck` class. COCO aliases are
+hosted by Roboflow under the same API key with no project or workflow needed,
+so `ROBOFLOW_WORKSPACE` and `ROBOFLOW_WORKFLOW_ID` are now blank by default and
+the workflow path is dormant. Full detail in PROGRESS.md finding 7.
+
+Consequence for the Stretch section: fine-tuning moves from "highest-value
+learning left" to **the likely requirement** for defensible accuracy.
+
+### A6 — Vehicle class matching is per-word, not exact (2026-08-05)
+
+The plan assumed normalizing model output was trivial. It was not. An exact
+match set containing `truck`/`pickup`/`vehicle` silently dropped the model's
+actual labels `pickup-truck`, `semi-trailer` and `vehicles` — including, on NYC
+local streets, box and delivery trucks, the most common double-parker there is.
+
+Matching now splits labels on separators and de-pluralizes before lookup, with
+an explicit veto list for phrases like "bus stop". The filter is deliberately
+permissive: a wrongly-kept box costs one Gemini call, a wrongly-dropped box is
+invisible. PROGRESS.md finding 8.
+
+### A7 — A replay harness precedes `pipeline.py` (2026-08-05)
+
+Not in the plan. Phase 1 step 6 goes straight from the detector to wiring
+`pipeline.py` + `app.py`, but the tracker and heuristic had by then passed 19
+unit tests without ever seeing a real frame — every box in those tests was
+hand-built to satisfy an assertion.
+
+`scripts/replay.py` runs the real modules over real consecutive polls and
+renders the intermediate state (track IDs, dwell counters, curb band,
+candidates). It exists to find out *where* the temporal logic breaks on real
+data before that logic is buried inside a pipeline and a dashboard. It also
+produces the cached sequences A4 needs and the demo replay mode the risk table
+already called for.

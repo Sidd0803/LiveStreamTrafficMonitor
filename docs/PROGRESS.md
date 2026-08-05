@@ -17,7 +17,7 @@ Last updated: **2026-08-04**
 | IoU tracker (stationarity) | ✅ Done, 19 tests pass | `baa6205` |
 | Lane/curb heuristic | ✅ Done, 19 tests pass | `baa6205` |
 | Docs + GitHub remote | ✅ Done | `2030aac` |
-| Roboflow client | 🟡 **Written, 17 tests pass — unverified against live API** | this commit |
+| Roboflow client | 🟡 **Written, 17 tests pass — unverified against live API** | `64ee564` |
 | Gemini adjudicator | ⛔ **Blocked — needs `GEMINI_API_KEY`** | — |
 | Pipeline orchestration | ⬜ Not started | — |
 | Streamlit dashboard | ⬜ Not started | — |
@@ -31,16 +31,83 @@ sequencing decision. NYC DOT needs no key.
 
 ## Pick up here
 
-1. Get a [Roboflow key](https://app.roboflow.com) and a [Gemini key](https://aistudio.google.com/apikey), put them in `.env`.
-2. Fill in `ROBOFLOW_WORKSPACE` and `ROBOFLOW_WORKFLOW_ID` (from the workflow's
-   URL in the Roboflow app), then **run the detector against a live frame** —
-   `roboflow_client.py` is written and unit-tested but has never made a real
-   API call. Confirm it resolves vehicles at 352x240.
-3. Build `src/detect/gemini_judge.py` — crop with `Box.padded(config.CROP_PADDING_PX, ...)`,
-   upscale to `config.CROP_MIN_DIM_PX`, send with a Pydantic `responseSchema`
-   (`is_double_parked`, `confidence`, `reason`, `vehicle_type`). Use structured
-   output, not free-text parsing.
-4. Wire `src/pipeline.py` + `app.py`, then the eval set.
+### 0. Get running on the new machine (~2 min)
+
+```bash
+git clone https://github.com/Sidd0803/LiveStreamTrafficMonitor.git
+cd LiveStreamTrafficMonitor
+python -m venv .venv && .venv/Scripts/activate && pip install -r requirements.txt
+cp .env.example .env
+```
+
+Confirm the environment is sound before touching anything — this needs no keys
+and no network:
+
+```bash
+python -m pytest tests/ -q
+```
+
+Expect **36 passed**. Then confirm live camera access, also keyless:
+
+```bash
+python -c "from src.sources import nycdot; c=nycdot.demo_cameras(); print(len(c), c[0].name, len(nycdot.fetch_snapshot(c[0])))"
+```
+
+> **Gotcha:** imports are repo-rooted, so `PYTHONPATH` must include the repo
+> root. `pytest` picks it up automatically from the working directory; ad-hoc
+> `python -c` may not. If you hit `ModuleNotFoundError: No module named 'src'`,
+> set `PYTHONPATH=$PWD` (PowerShell: `$env:PYTHONPATH = $PWD`).
+
+### 1. Verify Roboflow against a live frame ← **next action**
+
+Fill in `.env`:
+
+```
+ROBOFLOW_API_KEY=          # app.roboflow.com -> Settings -> API Keys
+ROBOFLOW_WORKSPACE=        # from the workflow URL: app.roboflow.com/<workspace>/workflows/<id>
+ROBOFLOW_WORKFLOW_ID=      #                                                      ^^^^
+```
+
+Then run the detector on a real Amsterdam Ave frame. `roboflow_client.py` is
+written and unit-tested but **has never made a real API call** — this is the
+first thing to prove.
+
+What to check: does `vehicle-detection-bz0yu/4` actually resolve vehicles at
+352x240? Count boxes against what you can see in the frame. This is the single
+biggest unknown in the project (see risks below).
+
+### 2. Build `src/detect/gemini_judge.py`
+
+Crop with `Box.padded(config.CROP_PADDING_PX, ...)`, upscale to
+`config.CROP_MIN_DIM_PX`, send with a Pydantic `responseSchema`
+(`is_double_parked`, `confidence`, `reason`, `vehicle_type`). Use structured
+output, not free-text parsing — `response_mime_type="application/json"` plus a
+schema. Free-text parsing will waste hours.
+
+### 3. Wire `src/pipeline.py` + `app.py`
+
+Then the eval set — but resolve the open eval-design question first.
+
+---
+
+## Decisions waiting on you
+
+Two things are genuinely open and should be settled before the work that
+depends on them.
+
+### Eval design — blocks Phase 2
+
+Frame-level labels cannot score a tracker. Full detail in the section below and
+in [BUILD_PLAN.md](BUILD_PLAN.md) amendment A4. **You said you wanted to review
+the eval strategy** — this is that conversation.
+
+### Is `vehicle-detection-bz0yu/4` your own trained model?
+
+Roboflow described it as "your existing Vehicle Detection model." Unanswered:
+did you train it, and if so on what imagery? A model trained on traffic-cam-like
+frames is far more trustworthy at 352x240 than one trained on high-res photos,
+and the answer changes whether Phase 4 fine-tuning is a stretch goal or a
+necessity.
 
 ---
 
@@ -205,6 +272,23 @@ explicit positive test for the genuine double-parking pattern.
 
 ---
 
+## Environment notes
+
+Things about the dev setup that are easy to trip over.
+
+- **Python 3.14** on the original machine. Nothing depends on 3.14 specifically;
+  3.11+ should be fine.
+- **`PYTHONPATH` must include the repo root.** Imports are rooted at `src.*`.
+- **Pillow, not OpenCV.** Chosen deliberately — lighter, no wheel issues on
+  3.14, and crop + draw is all that's needed. Don't add `cv2` without a reason.
+- **`.env` is gitignored** and does not exist in the repo. Copy `.env.example`.
+- **The repo is public.** No secrets in tracked files (verified by scan). Keep
+  it that way — everything credential-shaped reads from env via `config.py`.
+- **NYC DOT needs no key**, so camera ingestion and all 36 tests run
+  immediately after clone. Only detection and adjudication need credentials.
+
+---
+
 ## Commit history
 
 | Commit | What |
@@ -213,4 +297,16 @@ explicit positive test for the genuine double-parking pattern.
 | `e6889a5` | NYC DOT camera source + hand-curated camera list |
 | `baa6205` | Box geometry, IoU tracker, lane heuristic, 19 tests |
 | `2030aac` | README, build plan, progress log |
-| _this_ | Roboflow client (workflow + direct model paths), 17 more tests |
+| `64ee564` | Roboflow client (workflow + direct model paths), 17 more tests |
+
+---
+
+## Session log
+
+**2026-08-04** — Project scoped via interview and greenlit. Built camera
+ingestion, tracking, heuristic, and the Roboflow client. Key course-correction:
+the camera source moved from 511NY to NYC DOT once it became clear 511NY only
+covers highways inside the city. Roboflow proposed owning zone logic and
+incident detection; declined after confirming its stateful blocks need
+continuous video. Ended blocked on API keys, with the eval design flagged as
+unresolved.

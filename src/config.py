@@ -1,7 +1,7 @@
 """Central configuration. Every tunable threshold lives here, not inline.
 
-Phase 2 involves repeatedly tuning IOU_MATCH_THRESHOLD, STATIONARY_POLLS, and
-the confidence gates against the labeled eval set, so keep them in one place.
+Phase 2 involves repeatedly tuning the confidence gate and the crowding
+thresholds against the labeled eval set, so keep them in one place.
 """
 
 from __future__ import annotations
@@ -38,9 +38,8 @@ ROBOFLOW_API_URL = os.getenv("ROBOFLOW_API_URL", "https://serverless.roboflow.co
 ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "yolov8m-640")
 
 # Hosted Workflow: "one image in, vehicle boxes out". Deliberately detection
-# only — tracking, zone logic and incident detection stay in Python, because
-# Roboflow's stateful blocks (ByteTrack, Time in Zone) need continuous video
-# and our frames are ~12s apart.
+# only — the congestion metrics and scene classification stay in Python, where
+# they can be unit tested and tuned offline against cached detections.
 ROBOFLOW_WORKSPACE = os.getenv("ROBOFLOW_WORKSPACE", "")
 ROBOFLOW_WORKFLOW_ID = os.getenv("ROBOFLOW_WORKFLOW_ID", "")
 # Input/output key names as defined in the workflow itself.
@@ -75,17 +74,20 @@ MAX_RETRIES = 3
 NY511_MIN_INTERVAL_S = 7.0
 
 # --- Detection tunables ----------------------------------------------------
-# Roboflow: drop low-confidence boxes before they reach the tracker.
+# Roboflow: drop low-confidence boxes before they reach the metrics.
+#
+# This gate matters more here than it looks. Counting is the base signal, so a
+# threshold that drops real vehicles biases every downstream metric toward
+# "clear" — and does it silently. Tune against the labeled counts, not by feel.
 MIN_BOX_CONFIDENCE = 0.40
 
-# Word-level vocabulary for "a vehicle that could be double parked".
+# Word-level vocabulary for "a road vehicle we should count".
 #
 # Matching is per-word, not whole-string, because model label vocabularies vary
 # more than they look. vehicle-detection-bz0yu emits "pickup-truck",
 # "semi-trailer" and "vehicles"; an exact-match set containing "truck",
-# "pickup" and "vehicle" silently dropped all three. On NYC local streets
-# "semi-trailer" is this model's label for box and delivery trucks — the single
-# most common double-parker — so the filter was discarding the primary target.
+# "pickup" and "vehicle" silently dropped all three — 9 delivery trucks
+# discarded across four cameras, with no error and no trace.
 #
 # See is_vehicle_label() in detect/roboflow_client.py for the matching rule:
 # labels are lowercased, split on -/_/space, and de-pluralized before lookup.
@@ -99,50 +101,49 @@ VEHICLE_WORDS = {
 # against things like "truck-stop-sign" or "bus stop" being read as vehicles.
 NON_VEHICLE_WORDS = {"stop", "sign", "lane", "light", "signal", "person", "pedestrian"}
 
-# Tracker: two boxes in consecutive polls are "the same vehicle" above this IoU.
-# High, because a genuinely stationary vehicle barely moves between polls.
-IOU_MATCH_THRESHOLD = 0.60
-
-# Consecutive polls a track must hold position before it counts as stationary.
-# At MIN_POLL_INTERVAL_S=12s, 4 polls is roughly 48-60s of not moving.
-STATIONARY_POLLS = 4
-
-# Drop a track from memory after this many consecutive polls without a match.
-TRACK_MAX_MISSES = 2
-
-# Heuristic: a box whose center sits within this fraction of the frame height
-# from the bottom edge is likely curbside (near-field parking) rather than in a
-# travel lane. Per-camera zone polygons in data/zones/ override this entirely.
-CURB_BAND_FRACTION = 0.18
-
 # Ignore boxes smaller than this fraction of frame area — distant noise.
 MIN_BOX_AREA_FRACTION = 0.004
 
-# Congestion guard. At a red light every vehicle is stationary in a travel
-# lane, which a naive rule reads as a frame full of double-parking. If at
-# least this fraction of tracks are stationary, treat the frame as congested
-# and emit nothing — double parking means stopped *while traffic moves*.
-CONGESTION_STATIONARY_FRACTION = 0.70
-# Below this many tracks the fraction is too noisy to be meaningful.
-CONGESTION_MIN_TRACKS = 4
+# --- Congestion metrics ----------------------------------------------------
+# Below this many vehicles a frame is trivially clear and the crowding ratio is
+# too noisy to mean anything — one car has no nearest neighbour, two cars give
+# a single sample. Report "clear" without computing a ratio.
+MIN_VEHICLES_FOR_CROWDING = 3
 
-# --- Gemini adjudication ---------------------------------------------------
-# Pixels of context to include around a candidate box when cropping. A bare
-# box gives the model no road context to judge lane position from.
-CROP_PADDING_PX = 60
-# Upscale small crops before sending; traffic-cam crops are tiny.
-CROP_MIN_DIM_PX = 320
-# Below this, treat Gemini's positive verdict as too weak to report.
+# Crowding is the core signal: for each vehicle, the distance to its nearest
+# neighbour divided by *that vehicle's own* box diagonal, then the median over
+# all vehicles. Both terms shrink with distance from the camera, so the ratio
+# is scale-free and needs no per-camera calibration — which is what lets this
+# run across all ~950 cameras instead of the handful we could hand-tune.
+#
+# Low ratio = packed. A value near 1.0 means vehicles are roughly one car-length
+# apart, i.e. bumper to bumper. Thresholds below are the initial guess and are
+# expected to move once the labeled set exists — do not treat them as measured.
+CROWDING_JAMMED_MAX = 1.6
+CROWDING_MODERATE_MAX = 3.0
+
+# --- Gemini scene classification -------------------------------------------
+# Upscale frames before sending; 352x240 is small enough that detail is lost in
+# the model's own preprocessing.
+SCENE_MIN_DIM_PX = 704
+# Below this, treat Gemini's flow-state verdict as too weak to rely on and fall
+# back to the geometric classification.
 GEMINI_MIN_CONFIDENCE = 0.55
 
-# --- Demo defaults ---------------------------------------------------------
-# Hand-curated camera list, selected by visually inspecting live frames.
-# This file is the source of truth for which cameras the demo uses.
+# --- Camera selection ------------------------------------------------------
+# Hand-curated list, selected by visually inspecting live frames. Still the
+# best set for close-up work and demos.
+#
+# Note the curation criteria loosened with the change of problem: that list
+# rejected bridge decks and highway ramps because double parking cannot happen
+# there. Congestion certainly can, so those rejections no longer apply and the
+# network-wide sweep deliberately ignores the curated file. What still
+# disqualifies a camera is an unusable *view* — skyline framing, a hazed lens —
+# not the road type. See data/demo_cameras.json for the recorded reasons.
 DEMO_CAMERAS_FILE = DATA_DIR / "demo_cameras.json"
+MAX_DEMO_CAMERAS = 6
 
-# Fallback only, used if the curated file is missing. Name matching is a poor
-# selector — it happily returns bridge decks and highway ramps, where double
-# parking cannot occur. Prefer the curated file.
+# Fallback only, used if the curated file is missing.
 DEFAULT_CAMERA_NAME_HINTS = [
     "Amsterdam Ave",
     "Northern Blvd",
@@ -151,4 +152,12 @@ DEFAULT_CAMERA_NAME_HINTS = [
     "Columbus Ave",
     "Flatbush Ave",
 ]
-MAX_DEMO_CAMERAS = 6
+
+# Network-wide sweep. The whole point of a scale-free metric is that it runs
+# everywhere without per-camera calibration, so the sweep is capped by appetite
+# for API calls rather than by curation. At MIN_POLL_INTERVAL_S a full sweep of
+# ~950 cameras is well within Roboflow's free tier but is not instant.
+SWEEP_MAX_CAMERAS = 250
+# Parallel workers for a sweep. Kept modest: these are public civic feeds and
+# MIN_POLL_INTERVAL_S is per camera, not global.
+SWEEP_CONCURRENCY = 8

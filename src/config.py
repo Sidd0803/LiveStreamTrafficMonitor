@@ -47,7 +47,12 @@ ROBOFLOW_WORKFLOW_IMAGE_KEY = os.getenv("ROBOFLOW_WORKFLOW_IMAGE_KEY", "image")
 ROBOFLOW_WORKFLOW_OUTPUT_KEY = os.getenv("ROBOFLOW_WORKFLOW_OUTPUT_KEY", "vehicle_boxes")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# Verified against this project's key on 2026-08-06. Note that models.list()
+# is not a reliable availability check: it still returns gemini-2.5-flash,
+# but generateContent rejects it with "no longer available to new users". If
+# you hit a 404 here, test candidates with a real generate_content call rather
+# than trusting the catalog.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
 NY511_API_KEY = os.getenv("NY511_API_KEY", "")
 
@@ -101,8 +106,21 @@ VEHICLE_WORDS = {
 # against things like "truck-stop-sign" or "bus stop" being read as vehicles.
 NON_VEHICLE_WORDS = {"stop", "sign", "lane", "light", "signal", "person", "pedestrian"}
 
-# Ignore boxes smaller than this fraction of frame area — distant noise.
-MIN_BOX_AREA_FRACTION = 0.004
+# Floor on box area, as a fraction of frame area. Only excludes detections too
+# small to be a vehicle at all — roughly a 6x6px box at 352x240.
+#
+# This was 0.004 under the double-parking scope, where far-field vehicles were
+# irrelevant noise. That value cuts anything under ~18x18px, which is a
+# perfectly real car three blocks away, and it actively contradicts the current
+# metric: a *scale-dependent* filter in front of a *scale-free* statistic,
+# stripping out exactly the far field that per-vehicle normalization was built
+# to handle — and the far field is where a queue becomes visible first.
+#
+# Lowered rather than removed: confidence is the better noise filter, but a
+# zero-area or single-pixel box is a geometry problem, not a threshold one.
+# The right value is an open question for Phase 2; this is a floor, not a tuned
+# result. See BUILD_PLAN risks.
+MIN_BOX_AREA_FRACTION = 0.0005
 
 # --- Congestion metrics ----------------------------------------------------
 # Below this many vehicles a frame is trivially clear and the crowding ratio is

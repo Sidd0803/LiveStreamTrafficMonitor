@@ -146,7 +146,27 @@ CROWDING_MODERATE_MAX = 3.0
 SCENE_MIN_DIM_PX = 704
 # Below this, treat Gemini's flow-state verdict as too weak to rely on and fall
 # back to the geometric classification.
+#
+# Caveat found in live testing: Gemini reports 0.85 on essentially every legible
+# frame, dropping toward 0 only when the image is unreadable. So in practice
+# this threshold is a legibility gate, not a correctness gate — Gemini wins
+# whenever the frame can be read at all. Phase 2 should check whether its
+# confidence correlates with correctness before this number is trusted to do
+# more than that.
 GEMINI_MIN_CONFIDENCE = 0.55
+
+# Gemini calls allowed per sweep.
+#
+# The free tier is 20 requests/day/model, against a sweep that can span
+# hundreds of cameras — so calling Gemini on every frame is not merely
+# expensive, it fails outright after the twentieth. Raise this once billing is
+# enabled; the sweep spends the budget on the frames where it buys the most.
+GEMINI_SWEEP_BUDGET = 20
+
+# Gemini 3 models return 503 under load often enough that a single attempt
+# leaves visible holes in the map for reasons unrelated to traffic.
+GEMINI_MAX_RETRIES = 3
+GEMINI_RETRY_BASE_S = 1.5
 
 # --- Camera selection ------------------------------------------------------
 # Hand-curated list, selected by visually inspecting live frames. Still the

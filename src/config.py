@@ -134,11 +134,35 @@ MIN_VEHICLES_FOR_CROWDING = 3
 # is scale-free and needs no per-camera calibration — which is what lets this
 # run across all ~950 cameras instead of the handful we could hand-tune.
 #
-# Low ratio = packed. A value near 1.0 means vehicles are roughly one car-length
-# apart, i.e. bumper to bumper. Thresholds below are the initial guess and are
-# expected to move once the labeled set exists — do not treat them as measured.
-CROWDING_JAMMED_MAX = 1.6
-CROWDING_MODERATE_MAX = 3.0
+# Low ratio = packed.
+#
+# MEASURED 2026-08-06 across 30 borough-stratified live cameras:
+#   p10 0.62   p25 0.81   p50 0.83   p75 1.17   p90 1.34   max 1.95
+#
+# That measurement corrected two mistakes at once.
+#
+# 1. The original note here claimed "near 1.0 means bumper to bumper". Wrong,
+#    and wrong by construction: bumper-to-bumper centre-to-centre spacing is
+#    about one car *length*, while the denominator is the box *diagonal*, which
+#    is always larger. For a typical 40x30 box that puts true bumper-to-bumper
+#    near 0.8, not 1.0. The old thresholds (1.6 / 3.0) were derived from the
+#    wrong physical reading and classified 23 of 30 cameras as jammed.
+#
+# 2. More seriously, crowding cannot tell a queue from a row of *parked* cars,
+#    because parked cars are bumper to bumper by definition. On NYC streets
+#    that is nearly always the case, which is very likely what is pinning the
+#    observed median at 0.83. Gemini's prompt handles this explicitly ("parked
+#    cars are street furniture"); the geometry has no way to. This is the top
+#    open question for Phase 2 and it may prove fatal to geometry-alone — which
+#    makes the ablation more interesting, not less.
+#
+# The values below are PROVISIONAL PERCENTILE PLACEHOLDERS, set to split the
+# observed distribution into rough thirds so the dashboard is not a wall of
+# red. They make the index *relative* to current NYC conditions rather than
+# absolute. They are not validated, they are not a result, and they must be
+# re-derived from eval/labels.json before any number is reported.
+CROWDING_JAMMED_MAX = 0.80
+CROWDING_MODERATE_MAX = 1.15
 
 # --- Gemini scene classification -------------------------------------------
 # Upscale frames before sending; 352x240 is small enough that detail is lost in

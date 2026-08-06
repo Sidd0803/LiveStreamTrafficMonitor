@@ -39,6 +39,14 @@ MIN_KEPT_AREA = config.MIN_BOX_AREA_FRACTION * FRAME_AREA  # ~42 px^2 at 352x240
 # tuning, and a literal here would turn that into a spurious test failure.
 SUB_FLOOR_SIDE = math.sqrt(MIN_KEPT_AREA) / 2
 
+# Representative crowding values inside each band, derived from the thresholds
+# for the same reason. These moved once already when live measurement showed
+# the originals classified 23 of 30 real cameras as jammed, and they will move
+# again when eval/labels.json exists — tests must survive that.
+MID_MODERATE = (config.CROWDING_JAMMED_MAX + config.CROWDING_MODERATE_MAX) / 2
+CLEARLY_CLEAR = config.CROWDING_MODERATE_MAX * 3
+CLEARLY_JAMMED = config.CROWDING_JAMMED_MAX / 2
+
 
 def car(cx: float, cy: float, w: float = 40, h: float = 24, label: str = "car") -> Box:
     """A vehicle box centred at (cx, cy). Defaults are car-shaped at this scale."""
@@ -57,17 +65,28 @@ def grid(
     ]
 
 
+def spacing_for(crowding: float, w: float = 40, h: float = 24) -> float:
+    """Lattice spacing that yields exactly `crowding` for boxes of this size.
+
+    In a regular grid every nearest-neighbour distance is the spacing, so
+    crowding reduces to spacing / diagonal. Inverting that lets a test say
+    "put this layout in the jammed band" without hardcoding a pixel distance
+    that silently stops meaning what it meant when a threshold moves.
+    """
+    return crowding * math.hypot(w, h)
+
+
 # --- the two ends of the scale ---------------------------------------------
 
 def test_packed_grid_scores_low_crowding_and_reads_jammed():
-    """Vehicles about one car-length apart is the definition of jammed."""
-    boxes = grid(cols=4, rows=3, spacing=48, w=40, h=24, x0=40, y0=60)
+    """Vehicles packed within the jammed band read as jammed."""
+    spacing = spacing_for(CLEARLY_JAMMED)
+    boxes = grid(cols=4, rows=3, spacing=spacing, w=40, h=24, x0=40, y0=60)
     assert len(boxes) == 12
 
     metrics = frame_metrics(boxes, FRAME_W, FRAME_H)
 
-    # spacing 48 over a diagonal of hypot(40, 24) = 46.65 -> ~1.03 car lengths.
-    assert metrics.crowding == pytest.approx(48 / math.hypot(40, 24), rel=1e-6)
+    assert metrics.crowding == pytest.approx(CLEARLY_JAMMED, rel=1e-6)
     assert metrics.crowding < config.CROWDING_JAMMED_MAX
     assert metrics.flow_state == "jammed"
     assert metrics.vehicle_count == 12
@@ -88,7 +107,9 @@ def test_sparse_scatter_scores_high_crowding_and_reads_clear():
 
 def test_middle_band_reads_moderate():
     """The moderate bucket must be reachable, or the classifier is really binary."""
-    boxes = grid(cols=3, rows=2, spacing=100, w=40, h=24, x0=60, y0=70)
+    boxes = grid(
+        cols=3, rows=2, spacing=spacing_for(MID_MODERATE), w=40, h=24, x0=60, y0=70
+    )
 
     metrics = frame_metrics(boxes, FRAME_W, FRAME_H)
 
@@ -166,9 +187,16 @@ def test_scale_invariance_survives_the_full_frame_metrics_path():
 # perspective does to a road of uniform occupancy. Counts are deliberately
 # unbalanced (5 far, 3 near) — with a balanced split a global-average normalizer
 # would coincidentally land on the right median and the test would prove nothing.
-_FAR_W, _FAR_H, _FAR_SPACING = 25, 15, 45      # area 375 px^2, above the filter
-_NEAR_W, _NEAR_H, _NEAR_SPACING = 50, 30, 90
-_EXPECTED_RATIO = _FAR_SPACING / math.hypot(_FAR_W, _FAR_H)  # == the near ratio
+_FAR_W, _FAR_H = 25, 15      # area 375 px^2, above the filter
+_NEAR_W, _NEAR_H = 50, 30    # exactly twice the far field, in both dimensions
+
+# Both bands are laid out to the *same* crowding ratio, chosen inside the
+# jammed band so the mixed frame has a definite verdict to assert on. Spacings
+# are derived from it rather than fixed, so the fixture keeps testing
+# perspective robustness rather than accidentally testing a threshold.
+_EXPECTED_RATIO = CLEARLY_JAMMED
+_FAR_SPACING = _EXPECTED_RATIO * math.hypot(_FAR_W, _FAR_H)
+_NEAR_SPACING = _EXPECTED_RATIO * math.hypot(_NEAR_W, _NEAR_H)
 
 
 def _far_field() -> list[Box]:
@@ -375,7 +403,7 @@ def test_boxes_below_the_area_fraction_are_excluded_from_count():
 def test_specks_cannot_drag_the_verdict_away_from_jammed():
     """Unfiltered, twenty far-field specks packed at their own scale would still
     have huge ratios (tiny diagonals) and would pull the median toward clear."""
-    real = grid(4, 3, 48, 40, 24, 40, 60)
+    real = grid(4, 3, spacing_for(CLEARLY_JAMMED), 40, 24, 40, 60)
     specks = [car(300 + (i % 4) * 10, 20 + (i // 4) * 10, 6, 4) for i in range(8)]
 
     assert frame_metrics(real + specks, FRAME_W, FRAME_H).flow_state == "jammed"
@@ -404,13 +432,13 @@ def test_area_threshold_boundary_is_inclusive():
     "crowding, expected",
     [
         (0.0, "jammed"),
-        (1.0, "jammed"),
+        (config.CROWDING_JAMMED_MAX / 2, "jammed"),
         (config.CROWDING_JAMMED_MAX, "jammed"),           # boundary is inclusive
         (config.CROWDING_JAMMED_MAX + 1e-9, "moderate"),
-        (2.2, "moderate"),
+        (MID_MODERATE, "moderate"),
         (config.CROWDING_MODERATE_MAX, "moderate"),       # boundary is inclusive
         (config.CROWDING_MODERATE_MAX + 1e-9, "clear"),
-        (12.0, "clear"),
+        (config.CROWDING_MODERATE_MAX * 4, "clear"),
     ],
 )
 def test_classify_thresholds(crowding: float, expected: str):
@@ -430,6 +458,12 @@ def test_classify_ignores_a_ratio_below_the_vehicle_floor():
 
 def test_flow_states_are_exactly_the_three_contract_values():
     values = {
-        classify(c, 10) for c in (None, 0.5, 1.6, 2.0, 3.0, 5.0, 100.0)
+        classify(c, 10)
+        for c in (
+            None,
+            config.CROWDING_JAMMED_MAX / 2,
+            MID_MODERATE,
+            config.CROWDING_MODERATE_MAX * 10,
+        )
     }
     assert values == {"clear", "moderate", "jammed"}
